@@ -26,10 +26,9 @@ import org.apache.flink.table.planner.plan.nodes.calcite.{Expand, Rank, TableAgg
 import org.apache.flink.table.planner.plan.nodes.logical._
 import org.apache.flink.table.planner.plan.nodes.physical.batch.{BatchExecCorrelate, BatchExecGroupAggregateBase}
 import org.apache.flink.table.planner.plan.nodes.physical.stream._
-import org.apache.flink.table.planner.plan.schema.DataStreamTable
+import org.apache.flink.table.planner.plan.schema.FlinkPreparingTableBase
 import org.apache.flink.table.planner.plan.stats.{WithLower, WithUpper}
 import org.apache.flink.table.planner.{JByte, JDouble, JFloat, JList, JLong, JShort}
-
 import org.apache.calcite.plan.hep.HepRelVertex
 import org.apache.calcite.plan.volcano.RelSubset
 import org.apache.calcite.rel.core._
@@ -50,7 +49,7 @@ import scala.collection.JavaConversions._
 
 /**
   * FlinkRelMdModifiedMonotonicity supplies a default implementation of
-  * [[FlinkRelMetadataQuery.getRelModifiedMonotonicity]] for logical algebra.
+  * [[FlinkRelMetadataQuery#getRelModifiedMonotonicity]] for logical algebra.
   */
 class FlinkRelMdModifiedMonotonicity private extends MetadataHandler[ModifiedMonotonicity] {
 
@@ -59,8 +58,8 @@ class FlinkRelMdModifiedMonotonicity private extends MetadataHandler[ModifiedMon
   def getRelModifiedMonotonicity(rel: TableScan, mq: RelMetadataQuery): RelModifiedMonotonicity = {
     val monotonicity: RelModifiedMonotonicity = rel match {
       case _: FlinkLogicalDataStreamTableScan | _: StreamExecDataStreamScan =>
-        val table = rel.getTable.unwrap(classOf[DataStreamTable[Any]])
-        table.statistic.getRelModifiedMonotonicity
+        val table = rel.getTable.unwrap(classOf[FlinkPreparingTableBase])
+        table.getStatistic.getRelModifiedMonotonicity
       case _ => null
     }
 
@@ -214,6 +213,12 @@ class FlinkRelMdModifiedMonotonicity private extends MetadataHandler[ModifiedMon
     getMonotonicity(rel.getInput, mq, rel.getRowType.getFieldCount)
   }
 
+  def getRelModifiedMonotonicity(
+    rel: StreamExecMiniBatchAssigner,
+    mq: RelMetadataQuery): RelModifiedMonotonicity = {
+    getMonotonicity(rel.getInput, mq, rel.getRowType.getFieldCount)
+  }
+
   def getRelModifiedMonotonicity(rel: Exchange, mq: RelMetadataQuery): RelModifiedMonotonicity = {
     // for exchange, get correspond from input
     val fmq = FlinkRelMetadataQuery.reuseOrCreate(mq)
@@ -286,7 +291,7 @@ class FlinkRelMdModifiedMonotonicity private extends MetadataHandler[ModifiedMon
   def getRelModifiedMonotonicity(
       rel: StreamExecGroupWindowAggregate,
       mq: RelMetadataQuery): RelModifiedMonotonicity = {
-    if (allAppend(mq, rel.getInput) && !rel.producesUpdates) {
+    if (allAppend(mq, rel.getInput) && !rel.emitStrategy.produceUpdates) {
       constants(rel.getRowType.getFieldCount)
     } else {
       null
